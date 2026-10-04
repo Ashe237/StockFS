@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fundamentals Viewer</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1c1c1a; --muted: #6b6b66; --line: #e4e4df;
+    --accent: #2d5be3; --pos: #1a7f4b; --neg: #c0392b; --head: #efefea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --panel: #1e1e1c; --text: #ecece8; --muted: #9a9a93; --line: #2f2f2c;
+            --accent: #7a9bff; --pos: #4cc38a; --neg: #ff7b6b; --head: #262624; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 20px 16px 8px; max-width: 1400px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 12px; font-weight: 650; }
+  .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .search { position: relative; flex: 1 1 280px; max-width: 420px; }
+  input[type=search] { width: 100%; padding: 10px 12px; font-size: 15px; border-radius: 8px;
+         border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #suggest { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; background: var(--panel);
+         border: 1px solid var(--line); border-radius: 8px; margin-top: 4px; overflow: hidden;
+         box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  #suggest button { display: flex; gap: 10px; width: 100%; text-align: left; padding: 8px 12px;
+         border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+  #suggest button:hover, #suggest button.on { background: var(--head); }
+  #suggest b { min-width: 56px; }
+  #suggest span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { padding: 8px 14px; border: 0; background: var(--panel); color: var(--text);
+         font: inherit; cursor: pointer; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .btn { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+         color: var(--text); font: inherit; cursor: pointer; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  main { max-width: 1400px; margin: 0 auto; padding: 8px 16px 40px; }
+  #title { display: flex; align-items: baseline; gap: 10px; margin: 12px 0 4px; }
+  #title h2 { margin: 0; font-size: 22px; }
+  #title span { color: var(--muted); }
+  .note { color: var(--muted); font-size: 12.5px; margin: 4px 0 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  #chartBox { padding: 12px 16px 8px; margin-bottom: 14px; }
+  #chartBox h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+  #chartWrap { position: relative; height: 240px; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 600px; }
+  th, td { padding: 6px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  thead th { position: sticky; top: 0; background: var(--head); font-weight: 600; z-index: 2; }
+  th:first-child, td:first-child { position: sticky; left: 0; text-align: left; background: var(--panel);
+         z-index: 1; min-width: 190px; border-right: 1px solid var(--line); }
+  thead th:first-child { background: var(--head); z-index: 3; }
+  tr.group td { background: var(--head); font-weight: 650; font-size: 12px; text-transform: uppercase;
+         letter-spacing: .04em; color: var(--muted); }
+  tr.row { cursor: pointer; }
+  tr.row:hover td { background: var(--head); }
+  tr.row.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+  .neg { color: var(--neg); } .pos { color: var(--pos); }
+  .dim { color: var(--muted); }
+  #msg { padding: 40px 16px; text-align: center; color: var(--muted); }
+  #msg.err { color: var(--neg); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fundamentals Viewer</h1>
+  <div class="bar">
+    <div class="search">
+      <input id="q" type="search" placeholder="Search ticker or company, e.g. AAPL" autocomplete="off" aria-label="Search company">
+      <div id="suggest" hidden></div>
+    </div>
+    <div class="seg" role="group" aria-label="Period">
+      <button id="mAnnual" class="on">Annual</button>
+      <button id="mQuarterly">Quarterly</button>
+    </div>
+    <button id="csv" class="btn" disabled>Export CSV</button>
+  </div>
+</header>
+<main>
+  <div id="msg">Search for a US-listed company to see up to 10 years of reported numbers.</div>
+  <div id="content" hidden>
+    <div id="title"><h2 id="name"></h2><span id="tick"></span></div>
+    <div class="note" id="note"></div>
+    <div id="chartBox" class="panel">
+      <h3 id="chartTitle"></h3>
+      <div id="chartWrap"><canvas id="chart"></canvas></div>
+    </div>
+    <div class="panel scroll" id="tableWrap"><table id="tbl"></table></div>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const $ = (s) => document.querySelector(s);
+
+// f: money (shown in millions), ps (per share), pct, x (ratio), sh (shares in millions)
+const LAYOUT = [
+  { group: 'Income statement' },
+  { k: 'revenue', l: 'Revenue', f: 'money' },
+  { k: 'revGrowth', l: 'Revenue growth (YoY)', f: 'pct', signed: true },
+  { k: 'grossProfit', l: 'Gross profit', f: 'money' },
+  { k: 'rnd', l: 'R&D expense', f: 'money' },
+  { k: 'operatingIncome', l: 'Operating income', f: 'money' },
+  { k: 'netIncome', l: 'Net income', f: 'money' },
+  { group: 'Per share' },
+  { k: 'epsDiluted', l: 'EPS (diluted)', f: 'ps' },
+  { k: 'epsGrowth', l: 'EPS growth (YoY)', f: 'pct', signed: true },
+  { k: 'dps', l: 'Dividend / share', f: 'ps' },
+  { k: 'sharesDiluted', l: 'Diluted shares (M)', f: 'sh' },
+  { group: 'Cash flow' },
+  { k: 'ocf', l: 'Operating cash flow', f: 'money' },
+  { k: 'capex', l: 'Capital expenditure', f: 'money' },
+  { k: 'fcf', l: 'Free cash flow', f: 'money' },
+  { k: 'buybacks', l: 'Share buybacks', f: 'money' },
+  { group: 'Balance sheet' },
+  { k: 'cash', l: 'Cash & equivalents', f: 'money' },
+  { k: 'currentAssets', l: 'Current assets', f: 'money' },
+  { k: 'assets', l: 'Total assets', f: 'money' },
+  { k: 'currentLiabilities', l: 'Current liabilities', f: 'money' },
+  { k: 'liabilities', l: 'Total liabilities', f: 'money' },
+  { k: 'debt', l: 'Long-term debt', f: 'money' },
+  { k: 'equity', l: "Shareholders' equity", f: 'money' },
+  { group: 'Margins & ratios' },
+  { k: 'grossMargin', l: 'Gross margin', f: 'pct' },
+  { k: 'opMargin', l: 'Operating margin', f: 'pct' },
+  { k: 'netMargin', l: 'Net margin', f: 'pct' },
+  { k: 'fcfMargin', l: 'FCF margin', f: 'pct' },
+  { k: 'roe', l: 'Return on equity', f: 'pct' },
+  { k: 'currentRatio', l: 'Current ratio', f: 'x' },
+  { k: 'debtEquity', l: 'Debt / equity', f: 'x' },
+];
+const ROWS = LAYOUT.filter((r) => r.k);
+
+let co = null, mode = 'annual', sel = 'revenue', chart = null, rows = [];
+
+const nz = (v) => v !== null && v !== undefined && !Number.isNaN(v);
+const div = (a, b) => (nz(a) && nz(b) && b !== 0 ? a / b : null);
+const daysBetween = (a, b) => (Date.parse(b) - Date.parse(a)) / 864e5;
+
+// Add derived metrics to each period row.
+function derive(list, m) {
+  const lag = m === 'annual' ? 1 : 4;
+  return list.map((p, i) => {
+    const v = { ...p.v };
+    if (!nz(v.grossProfit) && nz(v.revenue) && nz(v.costOfRevenue)) v.grossProfit = v.revenue - v.costOfRevenue;
+    v.fcf = nz(v.ocf) && nz(v.capex) ? v.ocf - v.capex : null;
+    v.grossMargin = div(v.grossProfit, v.revenue);
+    v.opMargin = div(v.operatingIncome, v.revenue);
+    v.netMargin = div(v.netIncome, v.revenue);
+    v.fcfMargin = div(v.fcf, v.revenue);
+    v.currentRatio = div(v.currentAssets, v.currentLiabilities);
+    v.debtEquity = nz(v.equity) && v.equity > 0 ? div(v.debt, v.equity) : null;
+
+    // Year-over-year growth: compare with the period one year earlier (checked by date).
+    const prev = list[i - lag];
+    const isYearAgo = prev && Math.abs(daysBetween(prev.end, p.end) - 365) < 20;
+    const g = (a, b) => (isYearAgo && nz(a) && nz(b) && b > 0 ? a / b - 1 : null);
+    v.revGrowth = g(v.revenue, prev && prev.v.revenue);
+    v.epsGrowth = isYearAgo && nz(v.epsDiluted) && prev && nz(prev.v.epsDiluted) && prev.v.epsDiluted > 0
+      ? v.epsDiluted / prev.v.epsDiluted - 1 : null;
+
+    // ROE: annual = net income / year-end equity; quarterly = trailing 4 quarters of net income.
+    let ni = v.netIncome;
+    if (m === 'quarterly') {
+      const win = list.slice(Math.max(0, i - 3), i + 1);
+      const contiguous = win.length === 4 && daysBetween(win[0].end, p.end) < 300;
+      ni = contiguous && win.every((x) => nz(x.v.netIncome)) ? win.reduce((s, x) => s + x.v.netIncome, 0) : null;
+    }
+    v.roe = nz(v.equity) && v.equity > 0 ? div(ni, v.equity) : null;
+    return { end: p.end, v };
+  });
+}
+
+function fmt(v, f) {
+  if (!nz(v)) return '–';
+  switch (f) {
+    case 'money': return (v / 1e6).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    case 'sh': return (v / 1e6).toLocaleString('en-US', { maximumFractionDigits: 0 });
+    case 'ps': return v.toFixed(2);
+    case 'pct': return (v * 100).toFixed(1) + '%';
+    case 'x': return v.toFixed(2);
+  }
+  return String(v);
+}
+
+function label(end) {
+  const d = new Date(end + 'T00:00:00Z');
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
+function renderTable() {
+  const t = $('#tbl');
+  let h = '<thead><tr><th>' + (mode === 'annual' ? 'Fiscal year ending' : 'Quarter ending') + '</th>';
+  for (const p of rows) h += `<th>${label(p.end)}</th>`;
+  h += '</tr></thead><tbody>';
+  for (const r of LAYOUT) {
+    if (r.group) { h += `<tr class="group"><td colspan="${rows.length + 1}">${r.group}</td></tr>`; continue; }
+    h += `<tr class="row${r.k === sel ? ' sel' : ''}" data-k="${r.k}"><td>${r.l}</td>`;
+    for (const p of rows) {
+      const v = p.v[r.k];
+      const cls = !nz(v) ? 'dim' : r.signed ? (v < 0 ? 'neg' : 'pos') : v < 0 ? 'neg' : '';
+      h += `<td class="${cls}">${fmt(v, r.f)}</td>`;
+    }
+    h += '</tr>';
+  }
+  t.innerHTML = h + '</tbody>';
+  t.querySelectorAll('tr.row').forEach((tr) => tr.addEventListener('click', () => { sel = tr.dataset.k; renderTable(); renderChart(); }));
+  $('#tableWrap').scrollLeft = $('#tableWrap').scrollWidth; // show most recent periods first
+}
+
+function renderChart() {
+  const r = ROWS.find((x) => x.k === sel);
+  $('#chartTitle').textContent = r.l + (r.f === 'money' ? ' (millions USD)' : '');
+  const css = getComputedStyle(document.documentElement);
+  const accent = css.getPropertyValue('--accent').trim();
+  const grid = css.getPropertyValue('--line').trim();
+  const muted = css.getPropertyValue('--muted').trim();
+  const scale = r.f === 'money' || r.f === 'sh' ? 1e6 : r.f === 'pct' ? 0.01 : 1;
+  const data = rows.map((p) => (nz(p.v[sel]) ? p.v[sel] / scale : null));
+  if (chart) chart.destroy();
+  if (typeof Chart === 'undefined') return;
+  chart = new Chart($('#chart'), {
+    type: r.f === 'pct' || r.f === 'x' ? 'line' : 'bar',
+    data: { labels: rows.map((p) => label(p.end)), datasets: [{ data, backgroundColor: accent, borderColor: accent, borderRadius: 3, tension: .25, spanGaps: true }] },
+    options: {
+      maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmt(c.raw * scale, r.f) } } },
+      scales: { x: { ticks: { color: muted, maxRotation: 0, autoSkip: true }, grid: { display: false } },
+                y: { ticks: { color: muted }, grid: { color: grid } } },
+    },
+  });
+}
+
+function render() {
+  rows = derive(co[mode], mode);
+  renderTable();
+  renderChart();
+  $('#note').textContent = mode === 'annual'
+    ? 'Figures from 10-K filings. Money in millions of USD. Click a row to chart it.'
+    : 'Figures from 10-Q/10-K filings. Q4 is calculated as full year minus the first nine months (so Q4 EPS is approximate). Money in millions of USD.';
+}
+
+function setMsg(text, err) {
+  const m = $('#msg');
+  m.hidden = !text; m.textContent = text || ''; m.className = err ? 'err' : '';
+}
+
+async function load(ticker) {
+  $('#suggest').hidden = true;
+  setMsg('Loading ' + ticker.toUpperCase() + '…');
+  $('#content').hidden = true;
+  try {
+    const r = await fetch('/api/company?ticker=' + encodeURIComponent(ticker));
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Request failed');
+    co = j;
+    $('#name').textContent = co.name;
+    $('#tick').textContent = co.ticker;
+    $('#q').value = '';
+    history.replaceState(null, '', '#' + co.ticker);
+    setMsg('');
+    $('#content').hidden = false;
+    $('#csv').disabled = false;
+    render();
+  } catch (e) {
+    setMsg(e.message, true);
+  }
+}
+
+// ---- search box ----
+let timer, items = [], idx = -1;
+function showSuggest() {
+  const box = $('#suggest');
+  box.hidden = !items.length;
+  box.innerHTML = items.map((c, i) => `<button data-t="${c.ticker}" class="${i === idx ? 'on' : ''}"><b>${c.ticker}</b><span>${c.name}</span></button>`).join('');
+  box.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => load(b.dataset.t)));
+}
+$('#q').addEventListener('input', (e) => {
+  clearTimeout(timer);
+  const q = e.target.value.trim();
+  if (!q) { items = []; showSuggest(); return; }
+  timer = setTimeout(async () => {
+    try { items = await (await fetch('/api/search?q=' + encodeURIComponent(q))).json(); } catch { items = []; }
+    idx = -1; showSuggest();
+  }, 200);
+});
+$('#q').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') { idx = Math.min(items.length - 1, idx + 1); showSuggest(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { idx = Math.max(0, idx - 1); showSuggest(); e.preventDefault(); }
+  else if (e.key === 'Enter') {
+    const pick = items[idx] || items[0];
+    if (pick) load(pick.ticker); else if (e.target.value.trim()) load(e.target.value.trim());
+  } else if (e.key === 'Escape') { $('#suggest').hidden = true; }
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('.search')) $('#suggest').hidden = true; });
+
+// ---- mode toggle ----
+function setMode(m) {
+  mode = m;
+  $('#mAnnual').classList.toggle('on', m === 'annual');
+  $('#mQuarterly').classList.toggle('on', m === 'quarterly');
+  if (co) render();
+}
+$('#mAnnual').onclick = () => setMode('annual');
+$('#mQuarterly').onclick = () => setMode('quarterly');
+
+// ---- CSV export (raw values, USD) ----
+$('#csv').onclick = () => {
+  const lines = [['Metric', ...rows.map((p) => p.end)].join(',')];
+  for (const r of ROWS) lines.push([r.l, ...rows.map((p) => (nz(p.v[r.k]) ? p.v[r.k] : ''))].join(','));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+  a.download = `${co.ticker}-${mode}.csv`;
+  a.click();
+};
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => co && renderChart());
+if (location.hash.length > 1) load(location.hash.slice(1));
+</script>
+</body>
+</html>
